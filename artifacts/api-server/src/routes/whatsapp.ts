@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { twilioClient, validateTwilioSignature } from "../lib/twilio";
 import { getAIReply } from "../lib/claude";
+import { getHistory, appendMessages } from "../lib/conversation";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -35,7 +36,13 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
 
   req.log.info({ from, messageLength: incomingMessage.length }, "Received WhatsApp message");
 
-  const replyText = await getAIReply(incomingMessage);
+  const history = getHistory(from);
+  const replyText = await getAIReply(incomingMessage, history);
+
+  appendMessages(from, [
+    { role: "user", content: incomingMessage },
+    { role: "assistant", content: replyText },
+  ]);
 
   try {
     await twilioClient.messages.create({
@@ -43,7 +50,7 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
       to: from,
       body: replyText,
     });
-    req.log.info({ to: from }, "Sent WhatsApp reply");
+    req.log.info({ to: from, historyLength: history.length + 2 }, "Sent WhatsApp reply");
   } catch (err) {
     req.log.error({ err }, "Failed to send WhatsApp reply via Twilio");
     res.status(500).send("Failed to send reply");
@@ -56,7 +63,7 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
 router.get("/whatsapp/webhook", (req: Request, res: Response) => {
   res.status(200).json({
     status: "ok",
-    message: "WhatsApp webhook is live. Configure Twilio to POST to this URL.",
+    message: "Buenos Sabores WhatsApp bot is live. Configure Twilio to POST to this URL.",
     webhookUrl: `${req.protocol}://${req.get("host")}/api/whatsapp/webhook`,
   });
 });
