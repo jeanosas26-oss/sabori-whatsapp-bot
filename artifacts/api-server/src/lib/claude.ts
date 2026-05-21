@@ -7,7 +7,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const BASE_PROMPT = `Eres Sabori, el asistente virtual de ventas de Buenos Sabores Supermercado, ubicado en Argentina.
+const BASE_PROMPT = `Eres Sabori, el asistente virtual de ventas de Buenos Sabores Supermarket, ubicado en Argentina.
 
 Datos del local:
 - Dirección: Severo del Castillo y Durand
