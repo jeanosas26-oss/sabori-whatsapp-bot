@@ -73,7 +73,7 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
       req.log.error({ err }, "Failed to send order summary to customer");
     }
 
-    saveOrder(from, order);
+    await saveOrder(from, order);
 
     const STORE_NUMBER = "whatsapp:+542617617618";
     try {

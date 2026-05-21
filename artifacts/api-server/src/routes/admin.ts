@@ -40,9 +40,10 @@ router.get("/admin/catalog/status", async (req: Request, res: Response) => {
   });
 });
 
-router.get("/admin/orders", (req: Request, res: Response) => {
+router.get("/admin/orders", async (req: Request, res: Response) => {
   if (!requireAdminKey(req, res)) return;
-  res.json(getOrders());
+  const orders = await getOrders();
+  res.json(orders);
 });
 
 router.get("/admin/dashboard", (req: Request, res: Response) => {
