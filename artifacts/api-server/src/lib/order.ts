@@ -42,6 +42,44 @@ function fmt(n: number): string {
   return n.toLocaleString("es-AR");
 }
 
+export function formatStaffNotification(order: Order, customerPhone: string): string {
+  const lines: string[] = [];
+  const now = new Date().toLocaleString("es-AR", {
+    timeZone: "America/Argentina/Mendoza",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  lines.push("🔔 *NUEVO PEDIDO — Buenos Sabores*");
+  lines.push("━━━━━━━━━━━━━━━━━━━━━━━");
+  lines.push(`🕐 ${now}`);
+  lines.push(`👤 *Cliente:* ${order.cliente}`);
+  lines.push(`📱 *WhatsApp:* ${customerPhone.replace("whatsapp:", "")}`);
+  lines.push(`📍 *Entrega:* ${order.direccion}`);
+  lines.push(`💳 *Pago:* ${order.pago}`);
+  lines.push("");
+  lines.push("*🛒 Productos:*");
+
+  let total = 0;
+  for (const item of order.items) {
+    const subtotal = item.cantidad * item.precioUnit;
+    total += subtotal;
+    const cant = item.cantidad > 1 ? `${item.cantidad}x ` : "";
+    lines.push(`  - ${cant}${item.producto}  $${fmt(subtotal)}`);
+  }
+
+  lines.push("");
+  lines.push(`*💰 TOTAL: $${fmt(total)}*`);
+
+  if (order.notas) {
+    lines.push(`📝 *Notas:* ${order.notas}`);
+  }
+
+  lines.push("━━━━━━━━━━━━━━━━━━━━━━━");
+
+  return lines.join("\n");
+}
+
 export function formatOrderSummary(order: Order): string {
   const lines: string[] = [];
 

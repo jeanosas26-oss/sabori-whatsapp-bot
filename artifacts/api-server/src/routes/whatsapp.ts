@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { twilioClient, validateTwilioSignature } from "../lib/twilio";
 import { getAIReply } from "../lib/claude";
 import { getHistory, appendMessages } from "../lib/conversation";
-import { parseReply, formatOrderSummary } from "../lib/order";
+import { parseReply, formatOrderSummary, formatStaffNotification } from "../lib/order";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -62,12 +62,23 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
 
   if (order) {
     req.log.info({ cliente: order.cliente, items: order.items.length }, "Order completed — sending summary");
+
+    const summary = formatOrderSummary(order);
+
     try {
-      const summary = formatOrderSummary(order);
       await sendWhatsApp(to, from, summary);
-      req.log.info({ to: from }, "Order summary sent");
+      req.log.info({ to: from }, "Order summary sent to customer");
     } catch (err) {
-      req.log.error({ err }, "Failed to send order summary");
+      req.log.error({ err }, "Failed to send order summary to customer");
+    }
+
+    const STORE_NUMBER = "whatsapp:+542617617618";
+    try {
+      const staffNotification = formatStaffNotification(order, from);
+      await sendWhatsApp(to, STORE_NUMBER, staffNotification);
+      req.log.info({ to: STORE_NUMBER }, "Order forwarded to store");
+    } catch (err) {
+      req.log.error({ err }, "Failed to forward order to store");
     }
   }
 
