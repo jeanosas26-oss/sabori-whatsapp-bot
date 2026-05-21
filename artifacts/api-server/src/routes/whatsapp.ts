@@ -19,7 +19,8 @@ async function handleWebhook(req: Request, res: Response): Promise<void> {
       : (req.body as Record<string, string>);
 
   const signature = req.headers["x-twilio-signature"] as string | undefined;
-  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  const proto = (req.headers["x-forwarded-proto"] as string) ?? req.protocol;
+  const fullUrl = `${proto}://${req.get("host")}${req.originalUrl}`;
 
   if (signature) {
     const isValid = validateTwilioSignature(signature, fullUrl, params);
