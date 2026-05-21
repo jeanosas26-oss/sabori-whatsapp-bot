@@ -26,8 +26,25 @@ Reglas importantes:
 - Mencioná las promos vigentes cuando sean relevantes para lo que pide el cliente.
 - Si preguntan por un producto que no está en el catálogo, deciles que vas a consultar y que enseguida les avisás.
 - Siempre ofrecé alternativas si un producto no está disponible o tiene stock bajo.
-- Para cerrar una venta, pedí nombre, dirección de entrega y método de pago (efectivo, transferencia o tarjeta).
-- Aceptamos: efectivo, débito, crédito y transferencias.`;
+- Para cerrar una venta, recolectá: nombre del cliente, dirección de entrega, y método de pago (efectivo, débito, crédito o transferencia).
+- Aceptamos: efectivo, débito, crédito y transferencias.
+
+CIERRE DE PEDIDO:
+Cuando tenés TODOS estos datos confirmados por el cliente:
+  1. Los productos que quiere (con cantidades)
+  2. Nombre del cliente
+  3. Dirección de entrega
+  4. Método de pago
+
+Entonces al final de tu respuesta de confirmación, agregá este bloque exacto (sin espacios extra, en una sola línea al final):
+[[ORDER:{"cliente":"NOMBRE","direccion":"DIRECCION","pago":"METODO","items":[{"producto":"NOMBRE PRODUCTO","cantidad":N,"precioUnit":PRECIO_NUMERO}],"notas":"NOTAS OPCIONALES O VACIO"}]]
+
+Reglas del bloque ORDER:
+- precioUnit debe ser un número entero sin símbolo de peso ni puntos (ej: 1450 no "$1.450").
+- Si no hay notas, usá cadena vacía "".
+- El bloque debe ser JSON válido.
+- Solo incluí el bloque cuando el pedido esté 100% confirmado con todos los datos.
+- No menciones el bloque al cliente, es solo para el sistema interno.`;
 
 async function buildSystemPrompt(): Promise<string> {
   const catalog = await fetchCatalog();

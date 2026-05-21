@@ -2,9 +2,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { twilioClient, validateTwilioSignature } from "../lib/twilio";
 import { getAIReply } from "../lib/claude";
 import { getHistory, appendMessages } from "../lib/conversation";
+import { parseReply, formatOrderSummary } from "../lib/order";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+async function sendWhatsApp(from: string, to: string, body: string): Promise<void> {
+  await twilioClient.messages.create({ from, to, body });
+}
 
 router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
   const signature = req.headers["x-twilio-signature"] as string | undefined;
@@ -37,7 +42,9 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
   req.log.info({ from, messageLength: incomingMessage.length }, "Received WhatsApp message");
 
   const history = getHistory(from);
-  const replyText = await getAIReply(incomingMessage, history);
+  const rawReply = await getAIReply(incomingMessage, history);
+
+  const { text: replyText, order } = parseReply(rawReply);
 
   appendMessages(from, [
     { role: "user", content: incomingMessage },
@@ -45,16 +52,23 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
   ]);
 
   try {
-    await twilioClient.messages.create({
-      from: to,
-      to: from,
-      body: replyText,
-    });
+    await sendWhatsApp(to, from, replyText);
     req.log.info({ to: from, historyLength: history.length + 2 }, "Sent WhatsApp reply");
   } catch (err) {
     req.log.error({ err }, "Failed to send WhatsApp reply via Twilio");
     res.status(500).send("Failed to send reply");
     return;
+  }
+
+  if (order) {
+    req.log.info({ cliente: order.cliente, items: order.items.length }, "Order completed — sending summary");
+    try {
+      const summary = formatOrderSummary(order);
+      await sendWhatsApp(to, from, summary);
+      req.log.info({ to: from }, "Order summary sent");
+    } catch (err) {
+      req.log.error({ err }, "Failed to send order summary");
+    }
   }
 
   res.status(200).send("OK");
