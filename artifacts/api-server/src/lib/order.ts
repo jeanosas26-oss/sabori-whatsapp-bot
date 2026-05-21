@@ -7,6 +7,7 @@ export interface OrderItem {
 export interface Order {
   cliente: string;
   direccion: string;
+  zonaEntrega?: string;
   pago: string;
   items: OrderItem[];
   notas?: string;
@@ -56,7 +57,9 @@ export function formatStaffNotification(order: Order, customerPhone: string): st
   lines.push(`👤 *Cliente:* ${order.cliente}`);
   lines.push(`📱 *WhatsApp:* ${customerPhone.replace("whatsapp:", "")}`);
   lines.push(`📍 *Entrega:* ${order.direccion}`);
+  if (order.zonaEntrega) lines.push(`🗺 *Zona:* ${order.zonaEntrega}`);
   lines.push(`💳 *Pago:* ${order.pago}`);
+  lines.push(`🛵 *Envío:* A confirmar por el local`);
   lines.push("");
   lines.push("*🛒 Productos:*");
 
@@ -69,7 +72,8 @@ export function formatStaffNotification(order: Order, customerPhone: string): st
   }
 
   lines.push("");
-  lines.push(`*💰 TOTAL: $${fmt(total)}*`);
+  lines.push(`*💰 Subtotal productos: $${fmt(total)}*`);
+  lines.push(`*🛵 Envío: A confirmar*`);
 
   if (order.notas) {
     lines.push(`📝 *Notas:* ${order.notas}`);
@@ -87,6 +91,7 @@ export function formatOrderSummary(order: Order): string {
   lines.push("━━━━━━━━━━━━━━━━━━━━━━━");
   lines.push(`*👤 Cliente:* ${order.cliente}`);
   lines.push(`*📍 Entrega:* ${order.direccion}`);
+  if (order.zonaEntrega) lines.push(`*🗺 Zona:* ${order.zonaEntrega}`);
   lines.push(`*💳 Pago:* ${order.pago}`);
   lines.push("");
   lines.push("*🛒 Tu pedido:*");
@@ -100,7 +105,8 @@ export function formatOrderSummary(order: Order): string {
   }
 
   lines.push("");
-  lines.push(`*💰 TOTAL: $${fmt(total)}*`);
+  lines.push(`*💰 Subtotal: $${fmt(total)}*`);
+  lines.push(`*🛵 Envío: A confirmar por el local*`);
   lines.push("━━━━━━━━━━━━━━━━━━━━━━━");
 
   if (order.notas) {
@@ -108,7 +114,7 @@ export function formatOrderSummary(order: Order): string {
     lines.push("");
   }
 
-  lines.push("Enseguida nos ponemos en contacto para coordinar la entrega. ¡Gracias por elegir Buenos Sabores! 🧡");
+  lines.push("Enseguida te confirmamos el costo de envío y coordinamos la entrega. ¡Gracias por elegir Buenos Sabores! 🧡");
 
   return lines.join("\n");
 }

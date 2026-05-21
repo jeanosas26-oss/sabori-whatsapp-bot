@@ -3,6 +3,7 @@ import { twilioClient, validateTwilioSignature } from "../lib/twilio";
 import { getAIReply } from "../lib/claude";
 import { getHistory, appendMessages } from "../lib/conversation";
 import { parseReply, formatOrderSummary, formatStaffNotification } from "../lib/order";
+import { saveOrder } from "../lib/orderStore";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -71,6 +72,8 @@ router.post("/whatsapp/webhook", async (req: Request, res: Response) => {
     } catch (err) {
       req.log.error({ err }, "Failed to send order summary to customer");
     }
+
+    saveOrder(from, order);
 
     const STORE_NUMBER = "whatsapp:+542617617618";
     try {
