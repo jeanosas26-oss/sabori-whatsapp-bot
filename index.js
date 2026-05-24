@@ -83,7 +83,7 @@ app.all('/api/whatsapp/webhook', async (req, res) => {
     if (nombre) s.nombre = nombre;
     s.messages.push({ role: 'user', content: msg });
     const prompt = await buildPrompt();
-    const r = await anthropic.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: prompt, messages: s.messages });
+    const r = await anthropic.messages.create({ model: 'claude-sonnet-4-5', max_tokens: 1024, system: prompt, messages: s.messages });
     const texto = r.content[0].text;
     s.messages.push({ role: 'assistant', content: texto });
     if (texto.includes('[PEDIDO_CONFIRMADO]')) {
