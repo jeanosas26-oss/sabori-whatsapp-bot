@@ -78,7 +78,7 @@ async function cargarCatalogo() {
     const r = await fetch(CONFIG.catalogoUrl, { timeout: 10000 });
     const data = await r.json();
     catalogo = (Array.isArray(data) ? data : data.productos || [])
-      .filter((p) => p.nom && Number(p.pre) > 0)
+      .filter((p) => p.nom && Number(p.pre) > 0 && !/^\s*promo/i.test(p.nom)) // las promos salen SOLO de la web
       .map((p) => ({ nom: p.nom, pre: Number(p.pre), sto: Number(p.sto), ofe: p.ofe === 'si', key: norm(p.nom) }));
     catalogoTs = Date.now();
     console.log(`Catálogo: ${catalogo.length} productos`);
@@ -140,6 +140,7 @@ CÓMO VENDER:
 - Español argentino, con "vos", cálido y corto (mensajes de WhatsApp, no párrafos largos).
 - Sé vendedor activo: sugerí promos y productos complementarios, pero sin insistir.
 - Usá SOLO precios de la lista de arriba. Nunca inventes productos ni precios.
+- Las ÚNICAS promos que existen son las de PROMOS VIGENTES. No ofrezcas ni inventes otras promos o combos.
 - Aclarale que el stock se confirma antes de mandar el link de pago.
 - Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
