@@ -15,6 +15,10 @@ const CONFIG = {
   pagos: 'Solo pagos electrónicos (Mercado Pago / transferencia). El link de pago se manda después de confirmar stock.',
   web: process.env.STORE_WEB || 'https://jeanosas26-oss.github.io/buenos-sabores/',
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
+  // Productos que Sabori ofrece siempre (los precios salen del listado de la web)
+  destacados: [
+    { claves: ['HANDROLL'], titulo: 'HANDROLLS MENDOZA ROLL', nota: 'De viernes a domingo hay seguro. De lunes a jueves son por encargue: tomá el pedido y aclarale que el local le confirma el horario.' },
+  ],
   // Las promos se leen solas de la web (tarjetas de promo con botón de carrito). Esto es solo respaldo.
   promosRespaldo: 'Consultá las promos vigentes en la web.',
 };
@@ -108,6 +112,14 @@ function buscar(texto, max = 25) {
     .map(({ p }) => `${p.nom} — $${p.pre.toLocaleString('es-AR')}${p.sto > 0 ? '' : ' (consultar stock)'}`);
 }
 
+function destacados() {
+  return CONFIG.destacados.map((g) => {
+    const items = catalogo.filter((p) => g.claves.some((k) => p.key.includes(norm(k))))
+      .map((p) => `${p.nom} — $${p.pre.toLocaleString('es-AR')}`);
+    return items.length ? `${g.titulo} (${g.nota})\n${items.join('\n')}` : '';
+  }).filter(Boolean).join('\n\n');
+}
+
 function prompt(resultados) {
   return `Sos Sabori, el vendedor por WhatsApp de ${CONFIG.nombre} (${CONFIG.direccion}).
 Horarios: ${CONFIG.horarios}
@@ -117,6 +129,9 @@ Web con todo el catálogo: ${CONFIG.web}
 
 PROMOS VIGENTES (estas son las únicas promos, con su precio exacto):
 ${promos || CONFIG.promosRespaldo}
+
+DESTACADOS PARA OFRECER (sugerilos cuando venga al caso, por ejemplo al saludar o si piden algo para comer):
+${destacados() || '(ninguno)'}
 
 PRODUCTOS DEL CATÁLOGO QUE COINCIDEN CON LO QUE PIDE EL CLIENTE:
 ${resultados.length ? resultados.join('\n') : '(ninguno encontrado para este mensaje — si pide algo, pedile que lo describa distinto o mandalo a la web)'}
@@ -247,7 +262,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'ok', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
-module.exports = { buscar, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
+module.exports = { buscar, destacados, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   initDB().then(() => { cargarCatalogo(); cargarPromos(); activarNumero().catch((e) => console.error('activarNumero', e.message)); app.listen(PORT, () => console.log(`Sabori corriendo en puerto ${PORT}`)); })
