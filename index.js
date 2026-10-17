@@ -170,7 +170,32 @@ async function enviar(to, texto) {
     headers: { Authorization: `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: texto.slice(0, 4096) } }),
   });
-  if (!r.ok) console.error('Error enviando a', to, await r.text());
+  if (!r.ok) { const t = await r.text(); console.error('Error enviando a', to, t); return false; }
+  return true;
+}
+
+// Aviso al personal: primero mensaje común (gratis si escribieron en las últimas 24 h);
+// si WhatsApp no lo deja, usa la plantilla aprobada "aviso_pedido_staff".
+const corto = (v, n = 900) => String(v || '-').replace(/[\n\t]+/g, ' ').replace(/ {4,}/g, '   ').slice(0, n);
+const ultimoMensaje = new Map(); // tel -> última vez que nos escribió (ventana de 24 h de WhatsApp)
+async function avisarStaff(staff, texto, p, tel) {
+  // Si el número del personal nos escribió en las últimas 24 h, el mensaje común es gratis y llega seguro.
+  const visto = ultimoMensaje.get(staff);
+  if (visto && Date.now() - visto < 23.5 * 60 * 60 * 1000) { await enviar(staff, texto); return; }
+  // Si no, WhatsApp exige una plantilla aprobada.
+  const r = await fetch(`${GRAPH}/${WA_PHONE_NUMBER_ID}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp', to: staff, type: 'template',
+      template: { name: process.env.WA_TEMPLATE_AVISO || 'aviso_pedido_staff', language: { code: 'es_AR' }, components: [{ type: 'body', parameters: [
+        corto(p.cliente, 60), corto('+' + tel, 30), corto(p.items), corto(`${p.entrega} ${p.zona}`, 400), corto(p.total, 40),
+      ].map((text) => ({ type: 'text', text })) }] },
+    }),
+  });
+  if (r.ok) return;
+  console.error('Plantilla no disponible, mando texto común:', (await r.text()).slice(0, 200));
+  await enviar(staff, texto);
 }
 // Al arrancar: registra el número en la Cloud API y suscribe la app a la cuenta de WhatsApp.
 // Son idempotentes: si ya está hecho, Meta responde OK o un error inofensivo.
@@ -208,9 +233,11 @@ const vistos = new Set();   // evita procesar dos veces el mismo mensaje
 app.post('/webhook', (req, res) => {
   res.sendStatus(200); // Meta exige respuesta rápida; procesamos después
   const value = req.body?.entry?.[0]?.changes?.[0]?.value;
+  for (const st of value?.statuses || []) if (st.status === 'failed') console.error('WhatsApp no pudo entregar a', st.recipient_id, JSON.stringify(st.errors || []));
   const msg = value?.messages?.[0];
   if (!msg || vistos.has(msg.id)) return;
   vistos.add(msg.id);
+  ultimoMensaje.set(msg.from, Date.now());
   if (vistos.size > 5000) vistos.clear();
   procesar(msg, value.contacts?.[0]?.profile?.name).catch((e) => console.error(e));
 });
@@ -374,7 +401,7 @@ async function procesar(msg, nombrePerfil) {
     const p = { cliente: get('Cliente') || s.nombre, telefono: tel, items: get('Pedido'), entrega: get('Entrega'), zona: get('Zona'), total: get('Total') };
     const id = await guardarPedido(p).catch((e) => (console.error('DB', e.message), '?'));
     for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
-      await enviar(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\nConfirmá stock y mandale el link de pago.`);
+      await avisarStaff(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\nConfirmá stock y mandale el link de pago.`, p, tel);
     }
     sesiones.delete(tel);
   }
