@@ -150,6 +150,7 @@ CÓMO VENDER:
 - Al ofrecer una promo, decí siempre qué incluye y su precio tal como figura en PROMOS VIGENTES (si aclara precio en efectivo, decí ambos).
 - Aclarale que el stock se confirma antes de mandar el link de pago.
 - Si el cliente manda un AUDIO, vas a ver su transcripción: respondé normalmente como si lo hubiera escrito (no hace falta aclarar que era un audio).
+- Si el cliente ESCRIBE una dirección de entrega, usá la herramienta ubicar_direccion, confirmale la dirección que encontraste y mandale el link del mapa para que verifique. En Zona del pedido poné la dirección y el link del mapa.
 - Si manda su UBICACIÓN, usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
 - Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
@@ -247,6 +248,30 @@ async function leerUbicacion(loc) {
   return `[UBICACIÓN DEL CLIENTE] ${dir || 'dirección no identificada'} — mapa: ${mapa}`;
 }
 
+// Busca una dirección escrita (ej. "Severo del Castillo 5030") en el mapa de Mendoza (OpenStreetMap, gratis)
+async function ubicarDireccion(texto) {
+  const q = encodeURIComponent(`${texto}, Mendoza, Argentina`);
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${q}&countrycodes=ar&viewbox=-69.10,-32.70,-68.40,-33.20&bounded=1&limit=1&addressdetails=1&accept-language=es`, {
+      headers: { 'User-Agent': 'SaboriBot/1.0 (Buenos Sabores Supermarket, Mendoza)' }, timeout: 8000,
+    });
+    const [x] = await r.json();
+    if (!x) return { encontrada: false, nota: 'No encontré esa dirección en el mapa. Pedile al cliente una referencia (entre calles, barrio) o que mande su ubicación de WhatsApp.' };
+    const a = x.address || {};
+    const dir = [[a.road, a.house_number].filter(Boolean).join(' '), a.neighbourhood || a.suburb, a.city || a.town || a.village || a.county].filter(Boolean).join(', ');
+    return { encontrada: true, direccion: dir || x.display_name, mapa: `https://maps.google.com/?q=${x.lat},${x.lon}`, numero_exacto: !!a.house_number };
+  } catch (e) {
+    console.error('Geocodificar', e.message);
+    return { encontrada: false, nota: 'El mapa no respondió. Seguí con la dirección tal como la escribió el cliente.' };
+  }
+}
+
+const HERRAMIENTAS = [{
+  name: 'ubicar_direccion',
+  description: 'Busca en el mapa una dirección que el cliente escribió (calle y número, esquina, barrio) en Mendoza y devuelve la dirección normalizada y un link de Google Maps. Usala siempre que el cliente escriba una dirección de entrega.',
+  input_schema: { type: 'object', properties: { direccion: { type: 'string', description: 'La dirección tal como la escribió el cliente, ej. "Severo del Castillo 5030, Corralitos"' } }, required: ['direccion'] },
+}];
+
 // Descarga el audio de WhatsApp y lo pasa a texto con Groq (Whisper, gratis)
 async function transcribirAudio(mediaId) {
   if (!process.env.GROQ_API_KEY) return null;
@@ -286,8 +311,22 @@ async function procesar(msg, nombrePerfil) {
   const ultimos = s.msgs.filter((m) => m.role === 'user').slice(-2).map((m) => m.content).join(' ');
   let respuesta;
   try {
-    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 800, system: prompt(buscar(ultimos)), messages: s.msgs });
-    respuesta = r.content.find((c) => c.type === 'text')?.text || '';
+    const system = prompt(buscar(ultimos));
+    const conv = [...s.msgs];
+    for (let paso = 0; paso < 4; paso++) {
+      const r = await anthropic.messages.create({ model: MODEL, max_tokens: 900, system, tools: HERRAMIENTAS, messages: conv });
+      const usos = r.content.filter((c) => c.type === 'tool_use');
+      respuesta = r.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+      if (r.stop_reason !== 'tool_use' || !usos.length) break;
+      conv.push({ role: 'assistant', content: r.content });
+      const resultados = [];
+      for (const u of usos) {
+        const out = u.name === 'ubicar_direccion' ? await ubicarDireccion(u.input.direccion) : { error: 'herramienta desconocida' };
+        console.log('Dirección:', u.input.direccion, '→', out.direccion || out.nota);
+        resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
+      }
+      conv.push({ role: 'user', content: resultados });
+    }
   } catch (e) {
     console.error('Claude', e.message);
     return enviar(tel, `Uy, se me trabó el sistema un momento 🙏 Mirá todo el catálogo en ${CONFIG.web} o escribime de nuevo en un ratito.`);
@@ -324,7 +363,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'ok', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
-module.exports = { buscar, destacados, textoDelMensaje, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
+module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   initDB().then(() => { cargarCatalogo(); cargarPromos(); activarNumero().catch((e) => console.error('activarNumero', e.message)); app.listen(PORT, () => console.log(`Sabori corriendo en puerto ${PORT}`)); })
