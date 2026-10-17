@@ -46,9 +46,16 @@ const pedidosMem = [];
 async function initDB() {
   if (!process.env.DATABASE_URL) { console.log('Sin DATABASE_URL: pedidos en memoria'); return; }
   const { Pool } = require('pg');
-  db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await db.query(`CREATE TABLE IF NOT EXISTS pedidos (id SERIAL PRIMARY KEY, cliente TEXT NOT NULL, telefono TEXT NOT NULL, items TEXT NOT NULL, total TEXT, zona TEXT, entrega TEXT, estado TEXT DEFAULT 'recibido', created_at TIMESTAMP DEFAULT NOW())`);
-  console.log('Base de datos lista');
+  try {
+    db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 8000 });
+    db.on('error', (e) => console.error('DB', e.message));
+    await db.query(`CREATE TABLE IF NOT EXISTS pedidos (id SERIAL PRIMARY KEY, cliente TEXT NOT NULL, telefono TEXT NOT NULL, items TEXT NOT NULL, total TEXT, zona TEXT, entrega TEXT, estado TEXT DEFAULT 'recibido', created_at TIMESTAMP DEFAULT NOW())`);
+    await db.query('ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entrega TEXT');
+    console.log('Base de datos lista');
+  } catch (e) {
+    console.error('No se pudo conectar a la base, sigo con pedidos en memoria:', e.message);
+    db = null;
+  }
 }
 async function guardarPedido(p) {
   if (db) {
