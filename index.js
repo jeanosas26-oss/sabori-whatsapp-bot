@@ -29,6 +29,7 @@ const CONFIG = {
 // WA_VERIFY_TOKEN     palabra secreta que elegís vos para verificar el webhook
 // ANTHROPIC_API_KEY   clave de Claude
 // STAFF_WHATSAPP      números que reciben los avisos, separados por coma (ej 5492613906605). No puede ser el mismo número del bot.
+// GROQ_API_KEY        (opcional) clave gratis de console.groq.com para escuchar audios
 // DATABASE_URL        (opcional) Postgres para guardar pedidos. Sin esto, se guardan en memoria.
 // ADMIN_API_KEY       clave para /api/admin/*
 // WA_WABA_ID          ID de la cuenta de WhatsApp Business (para suscribir la app al arrancar)
@@ -148,6 +149,8 @@ CÓMO VENDER:
 - Las ÚNICAS promos que existen son las de PROMOS VIGENTES. No ofrezcas ni inventes otras promos o combos.
 - Al ofrecer una promo, decí siempre qué incluye y su precio tal como figura en PROMOS VIGENTES (si aclara precio en efectivo, decí ambos).
 - Aclarale que el stock se confirma antes de mandar el link de pago.
+- Si el cliente manda un AUDIO, vas a ver su transcripción: respondé normalmente como si lo hubiera escrito (no hace falta aclarar que era un audio).
+- Si manda su UBICACIÓN, usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
 - Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
 [PEDIDO_CONFIRMADO]
@@ -211,13 +214,66 @@ app.post('/webhook', (req, res) => {
   procesar(msg, value.contacts?.[0]?.profile?.name).catch((e) => console.error(e));
 });
 
+// ───────────────────────── UBICACIÓN Y AUDIOS ─────────────────────────
+async function textoDelMensaje(msg) {
+  if (msg.type === 'text') return msg.text.body;
+  if (msg.type === 'location') return await leerUbicacion(msg.location);
+  if (msg.type === 'audio') {
+    const t = await transcribirAudio(msg.audio.id).catch((e) => (console.error('Audio', e.message), null));
+    return t ? `[AUDIO DEL CLIENTE, transcripto] ${t}` : '[El cliente mandó un audio que no se pudo escuchar. Pedile amablemente que lo escriba.]';
+  }
+  if (msg.type === 'button') return msg.button.text;
+  if (msg.type === 'interactive') return msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || null;
+  if (msg.type === 'image' && msg.image?.caption) return `[El cliente mandó una foto con este texto] ${msg.image.caption}`;
+  return null;
+}
+
+// Convierte la ubicación de WhatsApp en una dirección (OpenStreetMap, gratis)
+async function leerUbicacion(loc) {
+  const { latitude: lat, longitude: lng } = loc;
+  const mapa = `https://maps.google.com/?q=${lat},${lng}`;
+  let dir = [loc.name, loc.address].filter(Boolean).join(', ');
+  if (!dir) {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=es&zoom=18`, {
+        headers: { 'User-Agent': 'SaboriBot/1.0 (Buenos Sabores Supermarket, Mendoza)' }, timeout: 8000,
+      });
+      const j = await r.json();
+      const a = j.address || {};
+      dir = [[a.road, a.house_number].filter(Boolean).join(' '), a.neighbourhood || a.suburb, a.city || a.town || a.village || a.county]
+        .filter(Boolean).join(', ') || j.display_name || '';
+    } catch (e) { console.error('Ubicación', e.message); }
+  }
+  return `[UBICACIÓN DEL CLIENTE] ${dir || 'dirección no identificada'} — mapa: ${mapa}`;
+}
+
+// Descarga el audio de WhatsApp y lo pasa a texto con Groq (Whisper, gratis)
+async function transcribirAudio(mediaId) {
+  if (!process.env.GROQ_API_KEY) return null;
+  const h = { Authorization: `Bearer ${WA_TOKEN}` };
+  const meta = await (await fetch(`${GRAPH}/${mediaId}`, { headers: h })).json();
+  if (!meta.url) throw new Error('sin url de audio');
+  const audio = await (await fetch(meta.url, { headers: h })).buffer();
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: meta.mime_type || 'audio/ogg' }), 'audio.ogg');
+  form.append('model', 'whisper-large-v3-turbo');
+  form.append('language', 'es');
+  const r = await globalThis.fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST', headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: form,
+  });
+  if (!r.ok) throw new Error(`Groq ${r.status} ${await r.text()}`);
+  const j = await r.json();
+  console.log('Audio transcripto:', j.text?.slice(0, 80));
+  return j.text?.trim() || null;
+}
+
 async function procesar(msg, nombrePerfil) {
   const tel = msg.from;
   marcarLeido(msg.id);
-  if (msg.type !== 'text') {
-    return enviar(tel, '¡Hola! Por ahora leo solo mensajes de texto 🙌 Escribime qué necesitás y te ayudo con el pedido.');
+  const texto = await textoDelMensaje(msg);
+  if (!texto) {
+    return enviar(tel, '¡Hola! Ese tipo de mensaje no lo puedo ver 🙈 Escribime, mandame un audio o tu ubicación y te ayudo con el pedido.');
   }
-  const texto = msg.text.body;
   let s = sesiones.get(tel);
   if (!s || Date.now() - s.ts > 6 * 60 * 60 * 1000) s = { msgs: [], nombre: nombrePerfil || 'Cliente' };
   s.ts = Date.now();
@@ -268,7 +324,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'ok', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
-module.exports = { buscar, destacados, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
+module.exports = { buscar, destacados, textoDelMensaje, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   initDB().then(() => { cargarCatalogo(); cargarPromos(); activarNumero().catch((e) => console.error('activarNumero', e.message)); app.listen(PORT, () => console.log(`Sabori corriendo en puerto ${PORT}`)); })
