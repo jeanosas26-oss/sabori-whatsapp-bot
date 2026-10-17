@@ -15,11 +15,8 @@ const CONFIG = {
   pagos: 'Solo pagos electrónicos (Mercado Pago / transferencia). El link de pago se manda después de confirmar stock.',
   web: process.env.STORE_WEB || 'https://jeanosas26-oss.github.io/buenos-sabores/',
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
-  promos: `🌭 Promo Pancho Premium: 6 panes + 6 salchichas $8.499
-🍔 Promo Hamburguesas Premium: 2 pkts x2 + 1 pan gastronómico x4 $14.999
-🫙 Aceite Cocinero Girasol 1.5L $5.499
-🧀 Picada Perfecta 5 personas $12.900
-🍕 Super Promo Pizza: prepizza x3 + queso cremoso 500g + salsa 1kg $8.499`,
+  // Las promos se leen solas de la web (tarjetas de promo con botón de carrito). Esto es solo respaldo.
+  promosRespaldo: 'Consultá las promos vigentes en la web.',
 };
 
 // ───────────────────────── VARIABLES DE ENTORNO ─────────────────────────
@@ -83,6 +80,22 @@ async function cargarCatalogo() {
     console.log(`Catálogo: ${catalogo.length} productos`);
   } catch (e) { console.error('No se pudo cargar el catálogo', e.message); }
 }
+// ───────────────────────── PROMOS (leídas de la web) ─────────────────────────
+let promos = '';
+let promosTs = 0;
+async function cargarPromos() {
+  if (Date.now() - promosTs < 10 * 60 * 1000 && promos) return;
+  try {
+    const r = await fetch(CONFIG.web, { timeout: 15000 });
+    const html = await r.text();
+    const re = /agregarAlCarrito\('[^']*','([^']*)','Promos','([\d.]+)'\)/g;
+    const lista = [];
+    let m;
+    while ((m = re.exec(html))) lista.push(`${m[1]} — $${Number(m[2]).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`);
+    if (lista.length) { promos = lista.join('\n'); promosTs = Date.now(); console.log(`Promos: ${lista.length}`); }
+  } catch (e) { console.error('No se pudieron leer las promos', e.message); }
+}
+
 const STOP = new Set('de la el los las un una y o con sin para por que quiero tenes tienen hay me mi al del en a precio cuanto sale vale'.split(' '));
 function buscar(texto, max = 25) {
   const palabras = norm(texto).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w));
@@ -102,8 +115,8 @@ Entrega: ${CONFIG.delivery}
 Pagos: ${CONFIG.pagos}
 Web con todo el catálogo: ${CONFIG.web}
 
-PROMOS VIGENTES:
-${CONFIG.promos}
+PROMOS VIGENTES (estas son las únicas promos, con su precio exacto):
+${promos || CONFIG.promosRespaldo}
 
 PRODUCTOS DEL CATÁLOGO QUE COINCIDEN CON LO QUE PIDE EL CLIENTE:
 ${resultados.length ? resultados.join('\n') : '(ninguno encontrado para este mensaje — si pide algo, pedile que lo describa distinto o mandalo a la web)'}
@@ -191,7 +204,7 @@ async function procesar(msg, nombrePerfil) {
   s.msgs.push({ role: 'user', content: texto });
   s.msgs = s.msgs.slice(-20);
 
-  await cargarCatalogo();
+  await Promise.all([cargarCatalogo(), cargarPromos()]);
   // busca con el mensaje actual + el anterior del cliente, para no perder el contexto
   const ultimos = s.msgs.filter((m) => m.role === 'user').slice(-2).map((m) => m.content).join(' ');
   let respuesta;
@@ -234,9 +247,9 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'ok', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
-module.exports = { buscar, cargarCatalogo, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
+module.exports = { buscar, cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  initDB().then(() => { cargarCatalogo(); activarNumero().catch((e) => console.error('activarNumero', e.message)); app.listen(PORT, () => console.log(`Sabori corriendo en puerto ${PORT}`)); })
+  initDB().then(() => { cargarCatalogo(); cargarPromos(); activarNumero().catch((e) => console.error('activarNumero', e.message)); app.listen(PORT, () => console.log(`Sabori corriendo en puerto ${PORT}`)); })
     .catch((e) => { console.error(e); process.exit(1); });
 }
