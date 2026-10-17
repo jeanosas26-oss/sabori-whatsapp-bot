@@ -205,7 +205,8 @@ async function avisarStaff(staff, texto, p, tel) {
 async function activarNumero() {
   if (!WA_TOKEN || !WA_PHONE_NUMBER_ID) return console.log('Faltan WA_TOKEN / WA_PHONE_NUMBER_ID');
   const h = { Authorization: `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' };
-  if (process.env.WA_PIN) {
+  // El número ya quedó registrado. Solo se vuelve a registrar si se pide (evita el límite de intentos de Meta).
+  if (process.env.WA_PIN && process.env.WA_REGISTRAR === '1') {
     const r = await fetch(`${GRAPH}/${WA_PHONE_NUMBER_ID}/register`, { method: 'POST', headers: h, body: JSON.stringify({ messaging_product: 'whatsapp', pin: process.env.WA_PIN }) });
     console.log('Registro del número:', r.status, await r.text());
   }
