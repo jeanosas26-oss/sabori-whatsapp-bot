@@ -109,22 +109,42 @@ async function cargarPromos() {
   } catch (e) { console.error('No se pudieron leer las promos', e.message); }
 }
 
-const STOP = new Set('de la el los las un una y o con sin para por que quiero tenes tienen hay me mi al del en a precio cuanto sale vale'.split(' '));
-function buscar(texto, max = 25) {
-  const palabras = norm(texto).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w));
-  if (!palabras.length) return [];
+const STOP = new Set('de la el los las un una y o con sin para por que quiero tenes tienen hay me mi al del en a precio cuanto sale vale hola buenas dame mandame necesito queria quisiera algo unos unas'.split(' '));
+// sinónimos y diminutivos comunes
+const SINON = { bomboncito: 'bombon', bomboncitos: 'bombon', bombones: 'bombon', galletita: 'galleta', galletitas: 'galleta', gaseosa: 'coca', medialuna: 'medialuna', facturas: 'factura', fiambre: 'fiambreria', birra: 'cerveza', birras: 'cerveza', vino: 'vino', bonobon: 'bon' };
+const UNIDADES = /^(\d+(?:[.,]\d+)?)(g|gr|grs|gramos|kg|kilo|kilos|ml|cc|l|lt|lts|litro|litros|u|un|uni|unid|x)?$/;
+const tokens = (t) => norm(t).replace(/(\d)\s+(g|gr|grs|gramos|kg|ml|cc|l|lt|lts|litros?)\b/g, '$1$2').split(/[^a-z0-9.,]+/).map((w) => w.replace(/^[.,]+|[.,]+$/g, '')).filter(Boolean);
+function claveTok(w) {
+  const m = w.match(UNIDADES);
+  if (m) return { num: m[1].replace(',', '.') };
+  const base = SINON[w] || w;
+  return { pal: base.length > 5 ? base.replace(/(es|s)$/, '') : base };
+}
+function buscar(texto, max = 30) {
+  const q = [...new Set(tokens(texto))].filter((w) => !STOP.has(w) && (w.length > 1 || /\d/.test(w))).map(claveTok);
+  if (!q.length) return [];
   return catalogo
-    .map((p) => ({ p, s: palabras.reduce((a, w) => a + (p.key.includes(w) ? 1 : 0), 0) }))
+    .map((p) => {
+      const pw = (p.toks ||= tokens(p.nom).map(claveTok));
+      let s = 0;
+      for (const t of q) {
+        if (t.num) { if (pw.some((x) => x.num === t.num)) s += 2; continue; }
+        if (t.pal.length < 2) continue;
+        if (pw.some((x) => x.pal && (x.pal === t.pal))) s += 3;
+        else if (t.pal.length >= 4 && pw.some((x) => x.pal && (x.pal.startsWith(t.pal) || t.pal.startsWith(x.pal) && x.pal.length >= 4))) s += 2;
+      }
+      return { p, s };
+    })
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s || (b.p.sto > 0) - (a.p.sto > 0))
     .slice(0, max)
-    .map(({ p }) => `${p.nom} — $${p.pre.toLocaleString('es-AR')}${p.sto > 0 ? '' : ' (consultar stock)'}`);
+    .map(({ p }) => `${p.nom} — $${Math.round(p.pre).toLocaleString('es-AR')}${p.sto > 0 ? '' : ' (consultar stock)'}`);
 }
 
 function destacados() {
   return CONFIG.destacados.map((g) => {
     const items = catalogo.filter((p) => g.claves.some((k) => p.key.includes(norm(k))))
-      .map((p) => `${p.nom} — $${p.pre.toLocaleString('es-AR')}`);
+      .map((p) => `${p.nom} — $${Math.round(p.pre).toLocaleString('es-AR')}`);
     return items.length ? `${g.titulo} (${g.nota})\n${items.join('\n')}` : '';
   }).filter(Boolean).join('\n\n');
 }
