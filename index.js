@@ -17,7 +17,7 @@ const CONFIG = {
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
   // Productos que Sabori ofrece siempre (los precios salen del listado de la web)
   destacados: [
-    { claves: ['HANDROLL'], titulo: 'HANDROLLS MENDOZA ROLL', nota: 'De viernes a domingo hay seguro. De lunes a jueves son por encargue: tomá el pedido y aclarale que el local le confirma el horario.' },
+    { claves: ['HANDROLL'], titulo: 'HANDROLLS MENDOZA ROLL', nota: 'Cada handroll equivale a unas 8 piezas de sushi, pero NO viene cortado: se come entero, en la mano, así es su presentación. De viernes a domingo hay seguro. De lunes a jueves son por encargue: tomá el pedido y aclarale que el local le confirma el horario.' },
   ],
   // Las promos se leen solas de la web (tarjetas de promo con botón de carrito). Esto es solo respaldo.
   promosRespaldo: 'Consultá las promos vigentes en la web.',
