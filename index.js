@@ -151,7 +151,7 @@ CÓMO VENDER:
 - Aclarale que el stock se confirma antes de mandar el link de pago.
 - Si el cliente manda un AUDIO, vas a ver su transcripción: respondé normalmente como si lo hubiera escrito (no hace falta aclarar que era un audio).
 - Si el cliente ESCRIBE una dirección de entrega, usá la herramienta ubicar_direccion, confirmale la dirección que encontraste y mandale el link del mapa para que verifique. En Zona del pedido poné la dirección y el link del mapa.
-- Si manda su UBICACIÓN, usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
+- Si manda su UBICACIÓN o un link de Google Maps, vas a ver la dirección descifrada en [UBICACIÓN DEL CLIENTE]: usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
 - Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
 [PEDIDO_CONFIRMADO]
@@ -217,7 +217,15 @@ app.post('/webhook', (req, res) => {
 
 // ───────────────────────── UBICACIÓN Y AUDIOS ─────────────────────────
 async function textoDelMensaje(msg) {
-  if (msg.type === 'text') return msg.text.body;
+  if (msg.type === 'text') {
+    const body = msg.text.body;
+    const link = body.match(/https?:\/\/\S*(maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]+\/maps|maps\.google\.[a-z.]+)\S*/i);
+    if (link) {
+      const ub = await leerLinkMaps(link[0]).catch((e) => (console.error('Link maps', e.message), null));
+      if (ub) return `${body}\n${ub}`;
+    }
+    return body;
+  }
   if (msg.type === 'location') return await leerUbicacion(msg.location);
   if (msg.type === 'audio') {
     const t = await transcribirAudio(msg.audio.id).catch((e) => (console.error('Audio', e.message), null));
@@ -246,6 +254,33 @@ async function leerUbicacion(loc) {
     } catch (e) { console.error('Ubicación', e.message); }
   }
   return `[UBICACIÓN DEL CLIENTE] ${dir || 'dirección no identificada'} — mapa: ${mapa}`;
+}
+
+// Descifra un link de Google Maps pegado como texto (corto o largo) y lo convierte en dirección
+function coordsDeUrl(u) {
+  const dec = decodeURIComponent(u);
+  const pats = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),(-?\d+\.\d+)/, /[?&](?:q|query|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /\/(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/];
+  for (const p of pats) { const m = dec.match(p); if (m) return { latitude: Number(m[1]), longitude: Number(m[2]) }; }
+  return null;
+}
+async function leerLinkMaps(url) {
+  let actual = url;
+  for (let i = 0; i < 5 && !coordsDeUrl(actual); i++) {  // sigue las redirecciones del link corto
+    const r = await globalThis.fetch(actual, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const loc = r.headers.get('location');
+    if (!loc) {
+      const html = await r.text();
+      const c = coordsDeUrl(html.slice(0, 200000));
+      if (c) return leerUbicacion(c);
+      // links tipo ?q=Calle+123 sin coordenadas: usar el texto como dirección
+      const q = decodeURIComponent((actual.match(/[?&]q=([^&]+)/) || [])[1] || '').replace(/\+/g, ' ');
+      if (q) { const d = await ubicarDireccion(q); return d.encontrada ? `[UBICACIÓN DEL CLIENTE] ${d.direccion} — mapa: ${d.mapa}` : null; }
+      return null;
+    }
+    actual = new URL(loc, actual).toString();
+  }
+  const c = coordsDeUrl(actual);
+  return c ? leerUbicacion(c) : null;
 }
 
 // Busca una dirección escrita (ej. "Severo del Castillo 5030") en el mapa de Mendoza (OpenStreetMap, gratis)
