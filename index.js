@@ -17,6 +17,7 @@ const CONFIG = {
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
   // Productos que Sabori ofrece siempre (los precios salen del listado de la web)
   destacados: [
+    { claves: ['FIAMBRERIA X KG'], titulo: 'FIAMBRERÍA AL CORTE (precios POR KILO)', nota: 'Estos son los precios correctos de fiambres y quesos al corte: usá SIEMPRE estos y no otros precios de fiambre del catálogo (hormas o piezas enteras). Se pueden pedir por gramos: calculá proporcional al kilo y redondeá (ej. 250 g de un fiambre de $20.000/kg = $5.000). Aclarale que el peso final puede variar un poco al cortar.' },
     { claves: ['HANDROLL'], titulo: 'HANDROLLS MENDOZA ROLL', nota: 'Cada handroll equivale a unas 8 piezas de sushi, pero NO viene cortado: se come entero, en la mano, así es su presentación. De viernes a domingo hay seguro. De lunes a jueves son por encargue: tomá el pedido y aclarale que el local le confirma el horario.' },
   ],
   // Las promos se leen solas de la web (tarjetas de promo con botón de carrito). Esto es solo respaldo.
