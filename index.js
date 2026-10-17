@@ -73,7 +73,7 @@ let catalogo = [];
 let catalogoTs = 0;
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 async function cargarCatalogo() {
-  if (Date.now() - catalogoTs < 10 * 60 * 1000 && catalogo.length) return;
+  if (Date.now() - catalogoTs < 5 * 60 * 1000 && catalogo.length) return;
   try {
     const r = await fetch(CONFIG.catalogoUrl, { timeout: 10000 });
     const data = await r.json();
@@ -85,10 +85,11 @@ async function cargarCatalogo() {
   } catch (e) { console.error('No se pudo cargar el catálogo', e.message); }
 }
 // ───────────────────────── PROMOS (leídas de la web) ─────────────────────────
+const sesiones = new Map(); // tel -> { msgs, nombre, ts }
 let promos = '';
 let promosTs = 0;
 async function cargarPromos() {
-  if (Date.now() - promosTs < 10 * 60 * 1000 && promos) return;
+  if (Date.now() - promosTs < 3 * 60 * 1000 && promos) return;
   try {
     const r = await fetch(CONFIG.web, { timeout: 15000 });
     const html = await r.text();
@@ -96,7 +97,11 @@ async function cargarPromos() {
     const lista = [];
     let m;
     while ((m = re.exec(html))) lista.push(`${m[1]} — $${Number(m[2]).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`);
-    if (lista.length) { promos = lista.join('\n'); promosTs = Date.now(); console.log(`Promos: ${lista.length}`); }
+    if (lista.length) {
+      const nuevas = lista.join('\n');
+      if (promos && nuevas !== promos) { sesiones.clear(); console.log('Cambiaron las promos: reinicio conversaciones'); }
+      promos = nuevas; promosTs = Date.now(); console.log(`Promos: ${lista.length}`);
+    }
   } catch (e) { console.error('No se pudieron leer las promos', e.message); }
 }
 
@@ -141,6 +146,7 @@ CÓMO VENDER:
 - Sé vendedor activo: sugerí promos y productos complementarios, pero sin insistir.
 - Usá SOLO precios de la lista de arriba. Nunca inventes productos ni precios.
 - Las ÚNICAS promos que existen son las de PROMOS VIGENTES. No ofrezcas ni inventes otras promos o combos.
+- Al ofrecer una promo, decí siempre qué incluye y su precio tal como figura en PROMOS VIGENTES (si aclara precio en efectivo, decí ambos).
 - Aclarale que el stock se confirma antes de mandar el link de pago.
 - Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
@@ -193,7 +199,6 @@ app.get('/webhook', (req, res) => {
   res.sendStatus(403);
 });
 
-const sesiones = new Map(); // tel -> { msgs, nombre, ts }
 const vistos = new Set();   // evita procesar dos veces el mismo mensaje
 
 app.post('/webhook', (req, res) => {
