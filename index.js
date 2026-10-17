@@ -15,6 +15,8 @@ const CONFIG = {
   pagos: 'Solo pagos electrónicos (Mercado Pago / transferencia). El link de pago se manda después de confirmar stock.',
   web: process.env.STORE_WEB || 'https://jeanosas26-oss.github.io/buenos-sabores/',
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
+  // Productos discontinuados: Sabori nunca los ofrece aunque vuelvan a aparecer en el listado
+  excluir: ['ELBA', 'SANDWICH ESCOLAR', 'ESCOLAR VIENA'],
   // Productos que Sabori ofrece siempre (los precios salen del listado de la web)
   destacados: [
     { claves: ['FIAMBRERIA X KG'], titulo: 'FIAMBRERÍA AL CORTE (precios POR KILO)', nota: 'Estos son los precios correctos de fiambres y quesos al corte: usá SIEMPRE estos y no otros precios de fiambre del catálogo (hormas o piezas enteras). Se pueden pedir por gramos: calculá proporcional al kilo y redondeá (ej. 250 g de un fiambre de $20.000/kg = $5.000). Aclarale que el peso final puede variar un poco al cortar.' },
@@ -80,7 +82,7 @@ async function cargarCatalogo() {
     const r = await fetch(CONFIG.catalogoUrl, { timeout: 10000 });
     const data = await r.json();
     catalogo = (Array.isArray(data) ? data : data.productos || [])
-      .filter((p) => p.nom && Number(p.pre) > 0 && !/^\s*promo/i.test(p.nom)) // las promos salen SOLO de la web
+      .filter((p) => p.nom && Number(p.pre) > 0 && !/^\s*promo/i.test(p.nom) && !CONFIG.excluir.some((x) => norm(p.nom).includes(norm(x)))) // las promos salen SOLO de la web
       .map((p) => ({ nom: p.nom, pre: Number(p.pre), sto: Number(p.sto), ofe: p.ofe === 'si', key: norm(p.nom) }));
     catalogoTs = Date.now();
     console.log(`Catálogo: ${catalogo.length} productos`);
