@@ -183,7 +183,15 @@ Pedido: lista de productos con cantidades
 Entrega: Retiro o Uber Envíos
 Zona: dirección o "Retira"
 Total: monto estimado
-[/PEDIDO_CONFIRMADO]`;
+[/PEDIDO_CONFIRMADO]
+
+DERIVAR A UNA PERSONA DEL LOCAL (casi nunca):
+- Vos resolvés TODO: precios, stock, promos, horarios, entregas, direcciones, pagos, recomendaciones, pedidos. Si un producto no aparece, ofrecé alternativas parecidas antes de rendirte. Nunca derives por algo que podés contestar.
+- Derivá SOLO en estos casos: un reclamo o problema con un pedido ya hecho (faltó algo, llegó mal, cobro equivocado); un pago que el cliente dice haber hecho y hay que verificar; pedidos grandes, mayoristas o para eventos que necesitan un precio especial; factura A o datos fiscales; el cliente pide explícitamente hablar con una persona; o algo que de verdad no sabés y no está en tu información.
+- Cuando derives, decile al cliente algo como: "Te paso con una persona del local 🙌 En un ratito te escribe por WhatsApp." y agregá al final esta etiqueta (el cliente no la ve):
+[DERIVAR]
+Motivo: en pocas palabras, qué necesita el cliente
+[/DERIVAR]`;
 }
 
 // ───────────────────────── WHATSAPP CLOUD API ─────────────────────────
@@ -429,7 +437,17 @@ async function procesar(msg, nombrePerfil) {
     }
     sesiones.delete(tel);
   }
-  const limpio = respuesta.replace(/\[PEDIDO_CONFIRMADO\][\s\S]*?\[\/PEDIDO_CONFIRMADO\]/g, '').trim();
+  const der = respuesta.match(/\[DERIVAR\]([\s\S]*?)\[\/DERIVAR\]/);
+  if (der) {
+    const motivo = (der[1].match(/Motivo:\s*(.+)/) || [])[1]?.trim() || 'Consulta del cliente';
+    const ultimosMsgs = s.msgs.filter((x) => x.role === 'user' && typeof x.content === 'string').slice(-3).map((x) => `• ${x.content.slice(0, 200)}`).join('\n');
+    const p = { cliente: s.nombre, items: `ATENDER CLIENTE: ${motivo}`, entrega: 'Escribile al cliente:', zona: `wa.me/${tel}`, total: '-' };
+    for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+      await avisarStaff(staff, `🙋 CLIENTE PARA ATENDER\n\n👤 ${s.nombre}\n📱 +${tel}\n❓ ${motivo}\n\nÚltimos mensajes:\n${ultimosMsgs}\n\n👉 Escribile acá: https://wa.me/${tel}`, p, tel);
+    }
+    console.log('Derivado a asesor:', tel, motivo);
+  }
+  const limpio = respuesta.replace(/\[PEDIDO_CONFIRMADO\][\s\S]*?\[\/PEDIDO_CONFIRMADO\]/g, '').replace(/\[DERIVAR\][\s\S]*?\[\/DERIVAR\]/g, '').trim();
   if (limpio) await enviar(tel, limpio);
 }
 
