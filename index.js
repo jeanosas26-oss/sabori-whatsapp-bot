@@ -12,7 +12,7 @@ const CONFIG = {
   direccion: process.env.STORE_ADDRESS || 'Severo del Castillo y Durand, Los Corralitos, Mendoza',
   horarios: 'Lun a Sáb 8:30 a 00:00 · Dom y feriados 10:00 a 22:00',
   delivery: 'Retiro en el local o Uber Envíos: el cliente pide el Uber Envíos con el local como punto de retiro y paga el viaje directo a Uber.',
-  pagos: 'Solo pagos electrónicos (Mercado Pago / transferencia). El link de pago se manda después de confirmar stock.',
+  pagos: 'Transferencia o Mercado Pago al alias del local (se lo mandamos cuando el local confirma el stock). Si retira en el local también puede pagar en efectivo.',
   web: process.env.STORE_WEB || 'https://jeanosas26-oss.github.io/buenos-sabores/',
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
   // Productos discontinuados: Sabori nunca los ofrece aunque vuelvan a aparecer en el listado
@@ -62,12 +62,18 @@ async function initDB() {
     db = null;
   }
 }
+const pedidosPendientes = new Map(); // id -> pedido esperando confirmación del local
 async function guardarPedido(p) {
+  const id = await guardarPedidoDB(p);
+  pedidosPendientes.set(String(id), { id, ...p, ts: Date.now() });
+  return id;
+}
+async function guardarPedidoDB(p) {
   if (db) {
     const r = await db.query('INSERT INTO pedidos (cliente, telefono, items, total, zona, entrega) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [p.cliente, p.telefono, p.items, p.total, p.zona, p.entrega]);
     return r.rows[0].id;
   }
-  const id = pedidosMem.length + 1;
+  const id = (pedidosMem[0]?.id || 0) + 1;
   pedidosMem.unshift({ id, ...p, estado: 'recibido', created_at: new Date().toISOString() });
   return id;
 }
@@ -171,7 +177,8 @@ CÓMO VENDER:
 - Usá SOLO precios de la lista de arriba. Nunca inventes productos ni precios.
 - Las ÚNICAS promos que existen son las de PROMOS VIGENTES. No ofrezcas ni inventes otras promos o combos.
 - Al ofrecer una promo, decí siempre qué incluye y su precio tal como figura en PROMOS VIGENTES (si aclara precio en efectivo, decí ambos).
-- Aclarale que el stock se confirma antes de mandar el link de pago.
+- Cuando confirme el pedido, decile que el local revisa el stock y en unos minutos le llega por acá el total final y los datos para pagar. NO le pases el alias ni datos de pago vos: eso lo manda el sistema cuando el local confirma.
+- Si el cliente manda un comprobante de pago, agradecele y decile que el local lo verifica.
 - Si el cliente manda un AUDIO, vas a ver su transcripción: respondé normalmente como si lo hubiera escrito (no hace falta aclarar que era un audio).
 - Si el cliente ESCRIBE una dirección de entrega, usá la herramienta ubicar_direccion, confirmale la dirección que encontraste y mandale el link del mapa para que verifique. En Zona del pedido poné la dirección y el link del mapa.
 - Si manda su UBICACIÓN o un link de Google Maps, vas a ver la dirección descifrada en [UBICACIÓN DEL CLIENTE]: usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
@@ -386,9 +393,69 @@ async function transcribirAudio(mediaId) {
   return j.text?.trim() || null;
 }
 
+// ───────────────────────── CONFIRMACIÓN DEL LOCAL Y COBRO ─────────────────────────
+const esStaff = (tel) => String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).includes(tel);
+const plata = (n) => '$' + Math.round(Number(n)).toLocaleString('es-AR');
+function datosDePago(total) {
+  const alias = process.env.MP_ALIAS;
+  const titular = process.env.MP_TITULAR;
+  if (!alias) return 'El local te va a pasar los datos de pago en un momento 🙏';
+  return `💳 *Para pagar:* transferí ${total ? `*${total}*` : 'el total'} por Mercado Pago o desde tu banco al alias:\n\n*${alias}*${titular ? `\n(a nombre de ${titular})` : ''}\n\nCuando pagues, mandame la foto del comprobante por acá y listo 🙌`;
+}
+async function comandoStaff(tel, texto) {
+  const t = texto.trim();
+  const m = t.match(/^(ok|listo|confirmado|confirmo|si|sí)\s*#?\s*(\d+)\b\s*(.*)$/is);
+  const c = t.match(/^(no|cancelar|cancelado|anular)\s*#?\s*(\d+)\b\s*(.*)$/is);
+  if (!m && !c) {
+    return enviar(tel, '👋 Hola equipo. Para confirmar un pedido respondé:\n• *ok 12* → hay todo, le mando el total y el alias al cliente\n• *ok 12 sin coca* → le aviso el cambio y ajusto el total\n• *ok 12 total 15000* → confirmo con ese total\n• *no 12 motivo* → cancelo y le aviso al cliente');
+  }
+  const id = (m || c)[2];
+  const p = pedidosPendientes.get(id);
+  if (!p) return enviar(tel, `No encuentro el pedido #${id} pendiente 🤔 (puede que ya esté confirmado o que el sistema se haya reiniciado). Escribile al cliente directo si hace falta.`);
+  const nota = ((m || c)[3] || '').trim();
+  if (c) {
+    pedidosPendientes.delete(id);
+    await enviar(p.telefono, `Hola ${p.cliente} 😔 Lamentablemente no podemos preparar tu pedido #${id}${nota ? `: ${nota}` : ''}. ¿Querés que te ofrezca otra cosa?`);
+    return enviar(tel, `❌ Pedido #${id} cancelado y avisado al cliente.`);
+  }
+  let total = p.total;
+  let detalle = '';
+  const totalExplicito = nota.match(/total\s*\$?\s*([\d.,]+)/i);
+  if (totalExplicito) {
+    total = plata(totalExplicito[1].replace(/\./g, '').replace(',', '.'));
+    detalle = nota.replace(totalExplicito[0], '').trim();
+  } else if (nota) {
+    // Ajuste en palabras ("sin coca", "faltan 2 medialunas"): Claude recalcula el total
+    try {
+      await cargarCatalogo();
+      const r = await anthropic.messages.create({
+        model: MODEL, max_tokens: 300,
+        system: 'Ajustás pedidos de un supermercado. Respondé SOLO un JSON {"total": número, "explicacion": "texto corto para el cliente"} sin nada más.',
+        messages: [{ role: 'user', content: `Pedido original: ${p.items}\nTotal original: ${p.total}\nCambio indicado por el local: ${nota}\nPrecios de referencia:\n${buscar(p.items + ' ' + nota, 25).join('\n')}\nCalculá el nuevo total.` }],
+      });
+      const j = JSON.parse((r.content.find((x) => x.type === 'text')?.text || '{}').match(/\{[\s\S]*\}/)[0]);
+      if (j.total) total = plata(j.total);
+      detalle = j.explicacion || nota;
+    } catch (e) { console.error('Ajuste', e.message); detalle = nota; }
+  }
+  pedidosPendientes.delete(id);
+  await enviar(p.telefono, `✅ ¡Listo ${p.cliente}! Tu pedido #${id} está confirmado.${detalle ? `\n📝 ${detalle}` : ''}\n💰 *Total: ${total}*\n\n${datosDePago(total)}`);
+  return enviar(tel, `✅ Pedido #${id} confirmado. Le mandé al cliente el total (${total}) y el alias.`);
+}
+
 async function procesar(msg, nombrePerfil) {
   const tel = msg.from;
   marcarLeido(msg.id);
+  if (esStaff(tel) && msg.type === 'text') {  // el personal usa el bot para confirmar pedidos
+    return comandoStaff(tel, msg.text.body);
+  }
+  if (!esStaff(tel) && (msg.type === 'image' || msg.type === 'document')) {
+    const mio = [...pedidosPendientes.values(), ...pedidosMem].find((x) => x.telefono === tel);
+    for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+      await enviar(staff, `🧾 El cliente +${tel}${mio ? ` (pedido #${mio.id})` : ''} mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`);
+    }
+    if (!msg.image?.caption) return enviar(tel, '¡Gracias! 🙌 Ya le paso el comprobante al local para que lo verifique.');
+  }
   const texto = await textoDelMensaje(msg);
   if (!texto) {
     return enviar(tel, '¡Hola! Ese tipo de mensaje no lo puedo ver 🙈 Escribime, mandame un audio o tu ubicación y te ayudo con el pedido.');
@@ -433,7 +500,7 @@ async function procesar(msg, nombrePerfil) {
     const p = { cliente: get('Cliente') || s.nombre, telefono: tel, items: get('Pedido'), entrega: get('Entrega'), zona: get('Zona'), total: get('Total') };
     const id = await guardarPedido(p).catch((e) => (console.error('DB', e.message), '?'));
     for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
-      await avisarStaff(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\nConfirmá stock y mandale el link de pago.`, p, tel);
+      await avisarStaff(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\n👉 Revisá el stock y respondé acá:\n*ok ${id}* (hay todo) · *ok ${id} sin X* (falta algo) · *no ${id}* (cancelar)`, p, tel);
     }
     sesiones.delete(tel);
   }
