@@ -12,6 +12,8 @@ const CONFIG = {
   direccion: process.env.STORE_ADDRESS || 'Severo del Castillo y Durand, Los Corralitos, Mendoza',
   horarios: 'Lun a Sáb 8:30 a 00:00 · Dom y feriados 10:00 a 22:00',
   delivery: 'Retiro en el local o Uber Envíos: el cliente pide el Uber Envíos con el local como punto de retiro y paga el viaje directo a Uber.',
+  alias: 'jeanosas.mp',
+  titular: 'JEANO SAS',
   pagos: 'Transferencia o Mercado Pago al alias del local (se lo mandamos cuando el local confirma el stock). Si retira en el local también puede pagar en efectivo.',
   web: process.env.STORE_WEB || 'https://jeanosas26-oss.github.io/buenos-sabores/',
   catalogoUrl: process.env.CATALOG_URL || 'https://jeanosas26-oss.github.io/buenos-sabores/productos.json',
@@ -397,8 +399,8 @@ async function transcribirAudio(mediaId) {
 const esStaff = (tel) => String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).includes(tel);
 const plata = (n) => '$' + Math.round(Number(n)).toLocaleString('es-AR');
 function datosDePago(total) {
-  const alias = process.env.MP_ALIAS;
-  const titular = process.env.MP_TITULAR;
+  const alias = process.env.MP_ALIAS || CONFIG.alias;
+  const titular = process.env.MP_TITULAR || CONFIG.titular;
   if (!alias) return 'El local te va a pasar los datos de pago en un momento 🙏';
   return `💳 *Para pagar:* transferí ${total ? `*${total}*` : 'el total'} por Mercado Pago o desde tu banco al alias:\n\n*${alias}*${titular ? `\n(a nombre de ${titular})` : ''}\n\nCuando pagues, mandame la foto del comprobante por acá y listo 🙌`;
 }
