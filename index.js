@@ -11,7 +11,7 @@ const CONFIG = {
   nombre: process.env.STORE_NAME || 'Buenos Sabores Supermarket & Drugstore',
   direccion: process.env.STORE_ADDRESS || 'Severo del Castillo y Durand, Los Corralitos, Mendoza',
   horarios: 'Lun a Sáb 8:30 a 00:00 · Dom y feriados 10:00 a 22:00',
-  delivery: 'Retiro en el local o Uber Envíos: el cliente pide el Uber Envíos con el local como punto de retiro y paga el viaje directo a Uber.',
+  delivery: 'Retiro en el local o Uber Envíos (no hay delivery propio): el cliente pide el Uber Envíos desde su app con el local como punto de retiro, y el costo, el viaje y el seguimiento los gestiona y paga él directo en Uber. Por lo general los envíos van en moto, así que si el pedido es grande o pesado sugerí dividirlo o pedir auto. Avisá que con lluvia, viento zonda o mal clima puede haber demoras largas.',
   alias: 'jeanosas.mp',
   titular: 'JEANO SAS',
   pagos: 'Transferencia o Mercado Pago al alias del local (se lo mandamos cuando el local confirma el stock). Si retira en el local también puede pagar en efectivo.',
