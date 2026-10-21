@@ -286,7 +286,7 @@ app.post('/webhook', (req, res) => {
 });
 
 // Códigos de verificación (Instagram, Facebook, etc.) que llegan al número del bot: se reenvían al personal y el bot no responde.
-const esCodigoVerificacion = (t) => /(c[oó]digo|code|verificaci[oó]n|verification|confirmaci[oó]n)/i.test(t) && /\b\d{4,8}\b|\b\d{3}[ -]\d{3}\b/.test(t);
+const esCodigoVerificacion = (t) => !/postal|descuento|cup[oó]n|promo/i.test(t) && /(c[oó]digo|code|verificaci[oó]n|verification|confirmaci[oó]n)/i.test(t) && /\b\d{4,8}\b|\b\d{3}[ -]\d{3}\b/.test(t);
 async function reenviarCodigo(de, nombre, texto) {
   console.log('Código de verificación recibido de', de, '→ reenviado al personal');
   const aviso = `🔐 Llegó un código de verificación al número del bot\nDe: ${nombre || ''} +${de}\n\n${texto}`;
