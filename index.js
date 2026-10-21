@@ -280,8 +280,20 @@ app.post('/webhook', (req, res) => {
   vistos.add(msg.id);
   ultimoMensaje.set(msg.from, Date.now());
   if (vistos.size > 5000) vistos.clear();
+  const cuerpo = msg.text?.body || msg.button?.text || '';
+  if (esCodigoVerificacion(cuerpo)) { reenviarCodigo(msg.from, value.contacts?.[0]?.profile?.name, cuerpo).catch((e) => console.error('Código', e.message)); return; }
   procesar(msg, value.contacts?.[0]?.profile?.name).catch((e) => console.error(e));
 });
+
+// Códigos de verificación (Instagram, Facebook, etc.) que llegan al número del bot: se reenvían al personal y el bot no responde.
+const esCodigoVerificacion = (t) => /(c[oó]digo|code|verificaci[oó]n|verification|confirmaci[oó]n)/i.test(t) && /\b\d{4,8}\b|\b\d{3}[ -]\d{3}\b/.test(t);
+async function reenviarCodigo(de, nombre, texto) {
+  console.log('Código de verificación recibido de', de, '→ reenviado al personal');
+  const aviso = `🔐 Llegó un código de verificación al número del bot\nDe: ${nombre || ''} +${de}\n\n${texto}`;
+  for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    await avisarStaff(staff, aviso, { cliente: 'CÓDIGO DE VERIFICACIÓN', items: texto, entrega: 'Mensaje de', zona: nombre || '', total: '-' }, de);
+  }
+}
 
 // ───────────────────────── UBICACIÓN Y AUDIOS ─────────────────────────
 async function textoDelMensaje(msg) {
