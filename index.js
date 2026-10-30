@@ -188,10 +188,11 @@ CÓMO VENDER:
 - Si el cliente manda un AUDIO, vas a ver su transcripción: respondé normalmente como si lo hubiera escrito (no hace falta aclarar que era un audio).
 - Si el cliente ESCRIBE una dirección de entrega, usá la herramienta ubicar_direccion, confirmale la dirección que encontraste y mandale el link del mapa para que verifique. En Zona del pedido poné la dirección y el link del mapa.
 - Si manda su UBICACIÓN o un link de Google Maps, vas a ver la dirección descifrada en [UBICACIÓN DEL CLIENTE]: usá esa dirección para la entrega, confirmásela ("¿Te lo llevamos a ...?") y en Zona del pedido poné la dirección y el link del mapa.
-- Tomá el pedido completo: productos y cantidades, nombre, si retira o usa Uber Envíos, y dirección si corresponde.
+- Tomá el pedido completo: productos y cantidades, NOMBRE Y APELLIDO del cliente, si retira o usa Uber Envíos, y dirección si corresponde.
+- OBLIGATORIO: antes de cerrar el pedido preguntá "¿A nombre de quién lo preparamos?" si el cliente todavía no te dijo su nombre. Nunca confirmes un pedido sin nombre.
 - Antes de cerrar, repetí el resumen y pedí confirmación. Cuando el cliente confirme, agregá al final esta etiqueta exacta (el cliente no la ve):
 [PEDIDO_CONFIRMADO]
-Cliente: nombre
+Cliente: nombre y apellido que te dio el cliente
 Pedido: lista de productos con cantidades
 Entrega: Retiro o Uber Envíos
 Zona: dirección o "Retira"
@@ -551,7 +552,8 @@ async function procesar(msg, nombrePerfil) {
   const m = respuesta.match(/\[PEDIDO_CONFIRMADO\]([\s\S]*?)\[\/PEDIDO_CONFIRMADO\]/);
   if (m) {
     const get = (l) => (m[1].match(new RegExp(l + ':\\s*(.+)')) || [])[1]?.trim() || '';
-    const p = { cliente: get('Cliente') || s.nombre, telefono: tel, items: get('Pedido'), entrega: get('Entrega'), zona: get('Zona'), total: get('Total') };
+    const nomOk = (n) => n && !/^(nombre|cliente|-|sin nombre|n\/a)/i.test(n.trim());
+    const p = { cliente: nomOk(get('Cliente')) ? get('Cliente') : (nomOk(s.nombre) ? s.nombre + ' (perfil de WhatsApp)' : 'Sin nombre (ver chat)'), telefono: tel, items: get('Pedido'), entrega: get('Entrega'), zona: get('Zona'), total: get('Total') };
     const id = await guardarPedido(p).catch((e) => (console.error('DB', e.message), '?'));
     for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
       await avisarStaff(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\n👉 Revisá el stock y respondé acá:\n*ok ${id}* (hay todo) · *ok ${id} sin X* (falta algo) · *no ${id}* (cancelar)`, p, tel);
@@ -586,7 +588,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
+app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30b', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
 module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
