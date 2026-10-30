@@ -23,6 +23,7 @@ const CONFIG = {
   destacados: [
     { claves: ['FIAMBRERIA X KG'], titulo: 'FIAMBRERÍA AL CORTE (precios POR KILO)', nota: 'Estos son los precios correctos de fiambres y quesos al corte: usá SIEMPRE estos y no otros precios de fiambre del catálogo (hormas o piezas enteras). Se pueden pedir por gramos: calculá proporcional al kilo y redondeá (ej. 250 g de un fiambre de $20.000/kg = $5.000). Aclarale que el peso final puede variar un poco al cortar.' },
     { claves: ['HANDROLL'], titulo: 'HANDROLLS MENDOZA ROLL', nota: 'Cada handroll equivale a unas 8 piezas de sushi, pero NO viene cortado: se come entero, en la mano, así es su presentación. SIEMPRE se encargan con al menos UN DÍA de anticipación, porque se preparan en el momento para que lleguen frescos y recién hechos (no hay handrolls para el mismo día). Explicalo con buena onda y como algo positivo, por ejemplo: "Los handrolls los hacemos por encargue, recién hechos para que te lleguen súper frescos 🍣. Pedilos con al menos un día de anticipación: ¿para qué día y horario los querés?". Tomá el pedido con el día y el horario y aclarale que el local se lo confirma. Si lo quiere para hoy, explicale amablemente que no llegamos y ofrecele dejarlo encargado para mañana.' },
+    { claves: ['PICADA PERFECTA'], titulo: 'PICADA PERFECTA (promo estrella)', nota: 'Precio total $16.500 para 5 personas que comen bien: sale solo $3.300 por persona. Incluye 200 g de salame, 200 g de queso barra, 200 g de mortadela, 200 g de jamón cocido, 100 g de papitas de copetín, 100 g de maní (con o sin sal, preguntale cómo lo prefiere) y 50 g de aceitunas verdes. Vendela con entusiasmo y persuasión: es una ganga, hoy nadie come con $3.300, ideal para la juntada, el partido o la previa. Si es para varios, ofrecé 2 picadas (10 personas, $33.000). Se puede encargar para otro día: preguntá para qué día y horario la quiere y a nombre de quién. No inventes otros tamaños ni otros precios.' },
   ],
   // Las promos se leen solas de la web (tarjetas de promo con botón de carrito). Esto es solo respaldo.
   promosRespaldo: 'Consultá las promos vigentes en la web.',
@@ -592,7 +593,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30c', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
+app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30d', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
 module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
