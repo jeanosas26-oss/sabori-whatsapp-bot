@@ -506,10 +506,14 @@ async function procesar(msg, nombrePerfil) {
   }
   if (!esStaff(tel) && (msg.type === 'image' || msg.type === 'document')) {
     const mio = [...pedidosPendientes.values(), ...pedidosMem].find((x) => x.telefono === tel);
-    for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
-      await enviar(staff, `🧾 El cliente +${tel}${mio ? ` (pedido #${mio.id})` : ''} mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`);
+    if (mio) {  // tiene un pedido: lo más probable es que sea el comprobante
+      for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+        await enviar(staff, `🧾 El cliente +${tel} (pedido #${mio.id}) mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`);
+      }
+      if (!msg.image?.caption) return enviar(tel, '¡Gracias! 🙌 Ya le paso el comprobante al local para que lo verifique.');
+    } else if (!msg.image?.caption) {  // sin pedido: suele ser captura de un anuncio o de un producto
+      return enviar(tel, '¡Gracias por la foto! 🙌 No llego a verla bien desde acá. ¿Me contás qué producto o promo te interesa y te paso precio y disponibilidad?');
     }
-    if (!msg.image?.caption) return enviar(tel, '¡Gracias! 🙌 Ya le paso el comprobante al local para que lo verifique.');
   }
   const texto = await textoDelMensaje(msg);
   if (!texto) {
@@ -588,7 +592,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30b', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
+app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30c', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
 module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
