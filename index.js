@@ -58,6 +58,10 @@ async function initDB() {
     db.on('error', (e) => console.error('DB', e.message));
     await db.query(`CREATE TABLE IF NOT EXISTS pedidos (id SERIAL PRIMARY KEY, cliente TEXT NOT NULL, telefono TEXT NOT NULL, items TEXT NOT NULL, total TEXT, zona TEXT, entrega TEXT, estado TEXT DEFAULT 'recibido', created_at TIMESTAMP DEFAULT NOW())`);
     await db.query('ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entrega TEXT');
+    await db.query('CREATE TABLE IF NOT EXISTS avisos_pendientes (id SERIAL PRIMARY KEY, staff TEXT NOT NULL, texto TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW())');
+    await db.query('CREATE TABLE IF NOT EXISTS staff_visto (tel TEXT PRIMARY KEY, ts TIMESTAMP)');
+    const v = await db.query("SELECT tel, ts FROM staff_visto WHERE ts > NOW() - INTERVAL '24 hours'");
+    for (const r of v.rows) ultimoMensaje.set(r.tel, new Date(r.ts).getTime());
     console.log('Base de datos lista');
   } catch (e) {
     console.error('No se pudo conectar a la base, sigo con pedidos en memoria:', e.message);
@@ -211,17 +215,41 @@ async function enviar(to, texto) {
     body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: texto.slice(0, 4096) } }),
   });
   if (!r.ok) { const t = await r.text(); console.error('Error enviando a', to, t); return false; }
-  return true;
+  const j = await r.json().catch(() => ({}));
+  return j?.messages?.[0]?.id || true;
 }
 
 // Aviso al personal: primero mensaje común (gratis si escribieron en las últimas 24 h);
 // si WhatsApp no lo deja, usa la plantilla aprobada "aviso_pedido_staff".
 const corto = (v, n = 900) => String(v || '-').replace(/[\n\t]+/g, ' ').replace(/ {4,}/g, '   ').slice(0, n);
 const ultimoMensaje = new Map(); // tel -> última vez que nos escribió (ventana de 24 h de WhatsApp)
+// Avisos al personal que WhatsApp no pudo entregar (ventana de 24 h vencida): se reenvían apenas el personal escribe.
+const avisosPendientes = new Map(); // staff -> [textos]
+const enviadosStaff = new Map();    // id del mensaje de WhatsApp -> { staff, texto }
+function encolarAviso(staff, texto) {
+  const l = avisosPendientes.get(staff) || [];
+  if (!l.includes(texto)) l.push(texto);
+  avisosPendientes.set(staff, l.slice(-20));
+  if (db) db.query('INSERT INTO avisos_pendientes (staff, texto) VALUES ($1,$2)', [staff, texto]).catch((e) => console.error('DB aviso', e.message));
+}
+async function entregarPendientes(staff) {
+  let l = avisosPendientes.get(staff) || [];
+  if (db) {
+    try { const r = await db.query('DELETE FROM avisos_pendientes WHERE staff=$1 RETURNING texto', [staff]); l = [...new Set([...l, ...r.rows.map((x) => x.texto)])]; } catch (e) { console.error('DB aviso', e.message); }
+  }
+  avisosPendientes.delete(staff);
+  if (!l.length) return false;
+  await enviar(staff, `📬 Tenés ${l.length} aviso(s) que no te pude entregar antes (WhatsApp los bloquea si no le escribís al bot en 24 h):`);
+  for (const t of l) await enviar(staff, t);
+  return true;
+}
+async function guardarVisto(tel) {
+  if (db) db.query('INSERT INTO staff_visto (tel, ts) VALUES ($1, NOW()) ON CONFLICT (tel) DO UPDATE SET ts = NOW()', [tel]).catch(() => {});
+}
 async function avisarStaff(staff, texto, p, tel) {
   // Si el número del personal nos escribió en las últimas 24 h, el mensaje común es gratis y llega seguro.
   const visto = ultimoMensaje.get(staff);
-  if (visto && Date.now() - visto < 23.5 * 60 * 60 * 1000) { await enviar(staff, texto); return; }
+  if (visto && Date.now() - visto < 23.5 * 60 * 60 * 1000) { const id = await enviar(staff, texto); if (id && id !== true) enviadosStaff.set(id, { staff, texto }); else if (!id) encolarAviso(staff, texto); return; }
   // Si no, WhatsApp exige una plantilla aprobada.
   const r = await fetch(`${GRAPH}/${WA_PHONE_NUMBER_ID}/messages`, {
     method: 'POST',
@@ -233,9 +261,11 @@ async function avisarStaff(staff, texto, p, tel) {
       ].map((text) => ({ type: 'text', text })) }] },
     }),
   });
-  if (r.ok) return;
+  if (r.ok) { const j = await r.json().catch(() => ({})); const id = j?.messages?.[0]?.id; if (id) enviadosStaff.set(id, { staff, texto }); return; }
   console.error('Plantilla no disponible, mando texto común:', (await r.text()).slice(0, 200));
-  await enviar(staff, texto);
+  const id = await enviar(staff, texto);
+  if (id && id !== true) enviadosStaff.set(id, { staff, texto }); else encolarAviso(staff, texto);
+  if (enviadosStaff.size > 2000) enviadosStaff.clear();
 }
 // Al arrancar: registra el número en la Cloud API y suscribe la app a la cuenta de WhatsApp.
 // Son idempotentes: si ya está hecho, Meta responde OK o un error inofensivo.
@@ -274,11 +304,16 @@ const vistos = new Set();   // evita procesar dos veces el mismo mensaje
 app.post('/webhook', (req, res) => {
   res.sendStatus(200); // Meta exige respuesta rápida; procesamos después
   const value = req.body?.entry?.[0]?.changes?.[0]?.value;
-  for (const st of value?.statuses || []) if (st.status === 'failed') console.error('WhatsApp no pudo entregar a', st.recipient_id, JSON.stringify(st.errors || []));
+  for (const st of value?.statuses || []) if (st.status === 'failed') {
+    console.error('WhatsApp no pudo entregar a', st.recipient_id, JSON.stringify(st.errors || []));
+    const e = enviadosStaff.get(st.id);
+    if (e) { encolarAviso(e.staff, e.texto); enviadosStaff.delete(st.id); }
+  }
   const msg = value?.messages?.[0];
   if (!msg || vistos.has(msg.id)) return;
   vistos.add(msg.id);
   ultimoMensaje.set(msg.from, Date.now());
+  if (esStaff(msg.from)) guardarVisto(msg.from);
   if (vistos.size > 5000) vistos.clear();
   const cuerpo = msg.text?.body || msg.button?.text || '';
   if (esCodigoVerificacion(cuerpo)) { reenviarCodigo(msg.from, value.contacts?.[0]?.profile?.name, cuerpo).catch((e) => console.error('Código', e.message)); return; }
@@ -421,7 +456,7 @@ async function comandoStaff(tel, texto) {
   const m = t.match(/^(ok|listo|confirmado|confirmo|si|sí)\s*#?\s*(\d+)\b\s*(.*)$/is);
   const c = t.match(/^(no|cancelar|cancelado|anular)\s*#?\s*(\d+)\b\s*(.*)$/is);
   if (!m && !c) {
-    return enviar(tel, '👋 Hola equipo. Para confirmar un pedido respondé:\n• *ok 12* → hay todo, le mando el total y el alias al cliente\n• *ok 12 sin coca* → le aviso el cambio y ajusto el total\n• *ok 12 total 15000* → confirmo con ese total\n• *no 12 motivo* → cancelo y le aviso al cliente');
+    return enviar(tel, '👋 Hola equipo. Para confirmar un pedido respondé:\n• *ok 12* → hay todo, le mando el total y el alias al cliente\n• *ok 12 sin coca* → le aviso el cambio y ajusto el total\n• *ok 12 total 15000* → confirmo con ese total\n• *no 12 motivo* → cancelo y le aviso al cliente\n• *pedidos* → te muestro los pedidos pendientes');
   }
   const id = (m || c)[2];
   const p = pedidosPendientes.get(id);
@@ -460,7 +495,12 @@ async function comandoStaff(tel, texto) {
 async function procesar(msg, nombrePerfil) {
   const tel = msg.from;
   marcarLeido(msg.id);
+  if (esStaff(tel)) await entregarPendientes(tel).catch((e) => console.error('pendientes', e.message));
   if (esStaff(tel) && msg.type === 'text') {  // el personal usa el bot para confirmar pedidos
+    if (/^(pedidos|pendientes)$/i.test(msg.text.body.trim())) {
+      const l = [...pedidosPendientes.values()];
+      return enviar(tel, l.length ? '🧾 Pedidos esperando confirmación:\n\n' + l.map((p) => `#${p.id} · ${p.cliente} · +${p.telefono}\n📋 ${p.items}\n💰 ${p.total}`).join('\n\n') : '✅ No hay pedidos pendientes.');
+    }
     return comandoStaff(tel, msg.text.body);
   }
   if (!esStaff(tel) && (msg.type === 'image' || msg.type === 'document')) {
