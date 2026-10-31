@@ -41,6 +41,10 @@ const CONFIG = {
 // WA_WABA_ID          ID de la cuenta de WhatsApp Business (para suscribir la app al arrancar)
 // WA_PIN              PIN de 6 dígitos de verificación en dos pasos (para registrar el número al arrancar)
 const { WA_TOKEN, WA_PHONE_NUMBER_ID, WA_VERIFY_TOKEN, STAFF_WHATSAPP, ADMIN_API_KEY } = process.env;
+// Números dados de baja de los avisos (pedido del dueño 31/10/2026): se ignoran aunque sigan en STAFF_WHATSAPP.
+const STAFF_BAJA = String(process.env.STAFF_BAJA || '2613906605').split(',').map((x) => x.replace(/\D/g, '')).filter(Boolean);
+const staffList = () => String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)
+  .filter((t) => !STAFF_BAJA.some((b) => t.replace(/\D/g, '').endsWith(b)));
 const GRAPH = 'https://graph.facebook.com/v25.0';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5';
 
@@ -327,7 +331,7 @@ const esCodigoVerificacion = (t) => !/postal|descuento|cup[oó]n|promo/i.test(t)
 async function reenviarCodigo(de, nombre, texto) {
   console.log('Código de verificación recibido de', de, '→ reenviado al personal');
   const aviso = `🔐 Llegó un código de verificación al número del bot\nDe: ${nombre || ''} +${de}\n\n${texto}`;
-  for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+  for (const staff of staffList()) {
     await avisarStaff(staff, aviso, { cliente: 'CÓDIGO DE VERIFICACIÓN', items: texto, entrega: 'Mensaje de', zona: nombre || '', total: '-' }, de);
   }
 }
@@ -445,7 +449,7 @@ async function transcribirAudio(mediaId) {
 }
 
 // ───────────────────────── CONFIRMACIÓN DEL LOCAL Y COBRO ─────────────────────────
-const esStaff = (tel) => String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).includes(tel);
+const esStaff = (tel) => staffList().includes(tel);
 const plata = (n) => '$' + Math.round(Number(n)).toLocaleString('es-AR');
 function datosDePago(total) {
   const alias = process.env.MP_ALIAS || CONFIG.alias;
@@ -508,7 +512,7 @@ async function procesar(msg, nombrePerfil) {
   if (!esStaff(tel) && (msg.type === 'image' || msg.type === 'document')) {
     const mio = [...pedidosPendientes.values(), ...pedidosMem].find((x) => x.telefono === tel);
     if (mio) {  // tiene un pedido: lo más probable es que sea el comprobante
-      for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+      for (const staff of staffList()) {
         await avisarStaff(staff, `🧾 El cliente +${tel} (pedido #${mio.id}) mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`, { cliente: `COMPROBANTE pedido #${mio.id}`, items: 'El cliente mandó una foto/archivo (probable comprobante). Verificá el pago en Mercado Pago.', entrega: '', zona: '', total: '-' }, tel);
       }
       if (!msg.image?.caption) return enviar(tel, '¡Gracias! 🙌 Ya le paso el comprobante al local para que lo verifique.');
@@ -560,7 +564,7 @@ async function procesar(msg, nombrePerfil) {
     const nomOk = (n) => n && !/^(nombre|cliente|-|sin nombre|n\/a)/i.test(n.trim());
     const p = { cliente: nomOk(get('Cliente')) ? get('Cliente') : (nomOk(s.nombre) ? s.nombre + ' (perfil de WhatsApp)' : 'Sin nombre (ver chat)'), telefono: tel, items: get('Pedido'), entrega: get('Entrega'), zona: get('Zona'), total: get('Total') };
     const id = await guardarPedido(p).catch((e) => (console.error('DB', e.message), '?'));
-    for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    for (const staff of staffList()) {
       await avisarStaff(staff, `🛒 NUEVO PEDIDO #${id}\n\n👤 ${p.cliente}\n📱 +${tel}\n📋 ${p.items}\n🚚 ${p.entrega}\n📍 ${p.zona}\n💰 ${p.total}\n⏰ ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Mendoza' })}\n\n👉 Revisá el stock y respondé acá:\n*ok ${id}* (hay todo) · *ok ${id} sin X* (falta algo) · *no ${id}* (cancelar)`, p, tel);
     }
     sesiones.delete(tel);
@@ -570,7 +574,7 @@ async function procesar(msg, nombrePerfil) {
     const motivo = (der[1].match(/Motivo:\s*(.+)/) || [])[1]?.trim() || 'Consulta del cliente';
     const ultimosMsgs = s.msgs.filter((x) => x.role === 'user' && typeof x.content === 'string').slice(-3).map((x) => `• ${x.content.slice(0, 200)}`).join('\n');
     const p = { cliente: s.nombre, items: `ATENDER CLIENTE: ${motivo}`, entrega: 'Escribile al cliente:', zona: `wa.me/${tel}`, total: '-' };
-    for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    for (const staff of staffList()) {
       await avisarStaff(staff, `🙋 CLIENTE PARA ATENDER\n\n👤 ${s.nombre}\n📱 +${tel}\n❓ ${motivo}\n\nÚltimos mensajes:\n${ultimosMsgs}\n\n👉 Escribile acá: https://wa.me/${tel}`, p, tel);
     }
     console.log('Derivado a asesor:', tel, motivo);
@@ -593,7 +597,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-31a', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
+app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-31b', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length, avisos_a: staffList().map((t) => '…' + t.slice(-4)) }));
 
 module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
