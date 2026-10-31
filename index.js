@@ -509,7 +509,7 @@ async function procesar(msg, nombrePerfil) {
     const mio = [...pedidosPendientes.values(), ...pedidosMem].find((x) => x.telefono === tel);
     if (mio) {  // tiene un pedido: lo más probable es que sea el comprobante
       for (const staff of String(STAFF_WHATSAPP || '').split(',').map((x) => x.trim()).filter(Boolean)) {
-        await enviar(staff, `🧾 El cliente +${tel} (pedido #${mio.id}) mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`);
+        await avisarStaff(staff, `🧾 El cliente +${tel} (pedido #${mio.id}) mandó una foto/archivo, probablemente el comprobante. Verificá el pago en Mercado Pago.\n👉 https://wa.me/${tel}`, { cliente: `COMPROBANTE pedido #${mio.id}`, items: 'El cliente mandó una foto/archivo (probable comprobante). Verificá el pago en Mercado Pago.', entrega: '', zona: '', total: '-' }, tel);
       }
       if (!msg.image?.caption) return enviar(tel, '¡Gracias! 🙌 Ya le paso el comprobante al local para que lo verifique.');
     } else if (!msg.image?.caption) {  // sin pedido: suele ser captura de un anuncio o de un producto
@@ -593,7 +593,7 @@ app.patch('/api/admin/pedidos/:id', admin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-30d', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
+app.get('/', (req, res) => res.json({ status: 'ok', version: '2026-10-31a', bot: 'Sabori', comercio: CONFIG.nombre, productos: catalogo.length }));
 
 module.exports = { buscar, destacados, textoDelMensaje, _procesar: (...a) => procesar(...a), cargarCatalogo, cargarPromos, _getPromos: () => promos, _setCatalogo: (c) => { catalogo = c; catalogoTs = Date.now(); } };
 if (require.main === module) {
